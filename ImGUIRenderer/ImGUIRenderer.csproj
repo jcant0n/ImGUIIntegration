@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <ApplicationIcon />
+    <StartupObject />
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ImGui.NET" Version="1.78.0" />
+    <PackageReference Include="WaveEngine.Common" Version="3.0.0.5947-preview4" />
+    <PackageReference Include="WaveEngine.DirectX11" Version="3.0.0.5947-preview4" />
+    <PackageReference Include="WaveEngine.DirectX12" Version="3.0.0.5947-preview4" />
+    <PackageReference Include="WaveEngine.Forms" Version="3.0.0.5947-preview4" />
+    <PackageReference Include="WaveEngine.Mathematics" Version="3.0.0.5947-preview4" />
+    <PackageReference Include="WaveEngine.OpenGL" Version="3.0.0.5947-preview4" />
+    <PackageReference Include="WaveEngine.Vulkan" Version="3.0.0.5947-preview4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Content\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>
