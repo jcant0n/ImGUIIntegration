@@ -202,10 +202,11 @@ namespace VisualTests.LowLevel.Tests
             frameBegun = true;
             ImGui.NewFrame();
 
-            ImGui.Text("Hello ImGUI from Wave Engine!");
-            ImGui.Button("Save");
-            float value = 0.5f;
-            ImGui.SliderFloat("float", ref value, 0f, 1f);
+            //ImGui.Text("Hello ImGUI from Wave Engine!");
+            //ImGui.Button("Save");
+            //float value = 0.5f;
+            //ImGui.SliderFloat("float", ref value, 0f, 1f);
+            ImGui.ShowDemoWindow();
         }
 
         public void Render(CommandBuffer cb, FrameBuffer frameBuffer)
@@ -241,6 +242,7 @@ namespace VisualTests.LowLevel.Tests
                     ResourceCpuAccess.Write);
 
                 this.vertexBuffer = context.Factory.CreateBuffer(ref vertexBufferDescription);
+                this.vertexBuffers[0] = this.vertexBuffer;
             }
 
             int indexBufferSize = drawData.TotalIdxCount * sizeof(ushort);
