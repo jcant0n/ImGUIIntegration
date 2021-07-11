@@ -35,8 +35,7 @@ namespace VisualTests.LowLevel.Tests
         private System.Numerics.Vector2 scaleFactor = System.Numerics.Vector2.One;
 
         private IntPtr fontAtlasID = (IntPtr)1;
-        private int lastAssignedID = 100;
-        private bool frameBegun;
+        private int lastAssignedID = 10;
 
         private struct ResourceSetInfo
         {
@@ -173,25 +172,10 @@ namespace VisualTests.LowLevel.Tests
             this.io.Fonts.ClearTexData();
 
             this.scissors = new Rectangle[1];
-
-            this.io.DisplaySize = new System.Numerics.Vector2(
-                windowWidth / scaleFactor.X,
-                windowHeight / scaleFactor.Y);
-
-            this.io.DisplayFramebufferScale = scaleFactor;
-            this.io.DeltaTime = 1f / 60f;
-            ImGui.StyleColorsClassic();
-            ImGui.NewFrame();
-            this.frameBegun = true;
         }
 
         public void Update(TimeSpan gameTime)
         {
-            if (frameBegun)
-            {
-                ImGui.Render();
-            }
-
             this.io.DisplaySize = new System.Numerics.Vector2(
                 windowWidth / scaleFactor.X,
                 windowHeight / scaleFactor.Y);
@@ -199,24 +183,12 @@ namespace VisualTests.LowLevel.Tests
             this.io.DisplayFramebufferScale = scaleFactor;
             this.io.DeltaTime = 1f / 60f;
 
-            frameBegun = true;
             ImGui.NewFrame();
-
-            //ImGui.Text("Hello ImGUI from Wave Engine!");
-            //ImGui.Button("Save");
-            //float value = 0.5f;
-            //ImGui.SliderFloat("float", ref value, 0f, 1f);
             ImGui.ShowDemoWindow();
         }
 
         public void Render(CommandBuffer cb, FrameBuffer frameBuffer)
         {
-            if (!frameBegun)
-            {
-                return;
-            }
-
-            frameBegun = false;
             ImGui.Render();
 
             uint vertexOffset = 0;
