@@ -26,9 +26,7 @@ namespace VisualTests.LowLevel.Tests
         private ResourceLayout textureLayout;
         private ResourceSet resourceSet;
         private ResourceSet fontResourceSet;
-        private Rectangle[] scissors;
         private ImGuiIOPtr io;
-        private List<int> keyDownList;
 
         private int windowWidth;
         private int windowHeight;
@@ -36,7 +34,6 @@ namespace VisualTests.LowLevel.Tests
 
         private IntPtr fontAtlasID = (IntPtr)1;
         private int lastAssignedID = 100;
-        private bool frameBegun;
 
         private struct ResourceSetInfo
         {
@@ -57,7 +54,6 @@ namespace VisualTests.LowLevel.Tests
         {
             this.context = context;
             this.surface = surface;
-            this.keyDownList = new List<int>();
 
             IntPtr imGuiContext = ImGui.CreateContext();
             ImGui.SetCurrentContext(imGuiContext);
@@ -150,12 +146,6 @@ namespace VisualTests.LowLevel.Tests
 
             this.io = ImGui.GetIO();
             RecreateFontTexture(context);
-
-            this.scissors = new Rectangle[1];
-
-            SetPerFrameImGuiData(1 / 60f);
-            ImGui.NewFrame();
-            frameBegun = true;
 
             // Keyboard mapping. ImGui will use those indices to peek into the io.KeyDown[] array that we will update during the application lifetime.
             io.KeyMap[(int)ImGuiKey.Tab] = (int)Keys.Tab; 
@@ -290,12 +280,12 @@ namespace VisualTests.LowLevel.Tests
 
         public void Update(TimeSpan gameTime)
         {
-            if (frameBegun)
-            {
-                ImGui.Render();
-            }
+            this.io.DisplaySize = new System.Numerics.Vector2(
+                            windowWidth / scaleFactor.X,
+                            windowHeight / scaleFactor.Y);
 
-            SetPerFrameImGuiData((float)gameTime.TotalSeconds);
+            this.io.DisplayFramebufferScale = scaleFactor;
+            this.io.DeltaTime = (float)gameTime.TotalSeconds;
 
             // Read keyboard modifiers input
             var keyboardDispatcher = this.surface.KeyboardDispatcher;
@@ -303,28 +293,11 @@ namespace VisualTests.LowLevel.Tests
             io.KeyShift = keyboardDispatcher.IsKeyDown(Keys.LeftShift);
             io.KeyAlt = keyboardDispatcher.IsKeyDown(Keys.LeftAlt);
 
-            frameBegun = true;
             ImGui.NewFrame();
-        }
-
-        private void SetPerFrameImGuiData(float deltaTime)
-        {
-            this.io.DisplaySize = new System.Numerics.Vector2(
-                            windowWidth / scaleFactor.X,
-                            windowHeight / scaleFactor.Y);
-
-            this.io.DisplayFramebufferScale = scaleFactor;
-            this.io.DeltaTime = deltaTime;
         }
 
         public void Render(CommandBuffer cb, FrameBuffer frameBuffer)
         {
-            if (!frameBegun)
-            {
-                return;
-            }
-
-            frameBegun = false;
             ImGui.Render();
 
             uint vertexOffsetInVertices = 0;
@@ -431,7 +404,7 @@ namespace VisualTests.LowLevel.Tests
                         }
                     }
 
-                    this.scissors = new Rectangle[1]
+                    var scissors = new Rectangle[1]
                     {
                         new Rectangle(
                         (int)cmd.ClipRect.X,
@@ -440,7 +413,7 @@ namespace VisualTests.LowLevel.Tests
                         (int)(cmd.ClipRect.W - cmd.ClipRect.Y))
                     };
 
-                    cb.SetScissorRectangles(this.scissors);
+                    cb.SetScissorRectangles(scissors);
 
                     cb.DrawIndexedInstanced(cmd.ElemCount, 1, idx_offset, vtx_offset, 0);
 

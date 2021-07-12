@@ -128,7 +128,6 @@ namespace VisualTests.LowLevel.Tests
         {
             // Update
             this.time += (float)gameTime.TotalSeconds;
-            //this.time += 1f / 60f;
             this.view = Matrix4x4.CreateRotationY(this.time * 0.5f) * Matrix4x4.CreateLookAt(new Vector3(0, 0, 5), new Vector3(0, 0, 0), Vector3.Up);
             var viewProj = Matrix4x4.Multiply(this.view, this.proj);
 
@@ -164,13 +163,6 @@ namespace VisualTests.LowLevel.Tests
             commandBuffer.End();
 
             commandBuffer.Commit();
-
-            //var commandBufferGUI = this.commandQueue.CommandBuffer();
-            //commandBuffer.Begin();
-
-
-            //commandBufferGUI.End();
-            //commandBufferGUI.Commit();
 
             this.commandQueue.Submit();
             this.commandQueue.WaitIdle();
