@@ -119,7 +119,7 @@ namespace VisualTests.LowLevel.Tests
             var imGuiPSDescription = await this.assetsDirectory.ReadAndCompileShader(this.graphicsContext, "ImGui/imgui-frag", ShaderStages.Pixel, "PS");
 
 
-            uiRenderer = new ImGuiRenderer(this.graphicsContext, this.frameBuffer, imGuiVSDescription, imGuiPSDescription);
+            uiRenderer = new ImGuiRenderer(this.graphicsContext, this.frameBuffer, this.surface, imGuiVSDescription, imGuiPSDescription);
 
             this.MarkAsLoaded();
         }
@@ -134,6 +134,11 @@ namespace VisualTests.LowLevel.Tests
 
             this.surface.MouseDispatcher.DispatchEvents();
             this.surface.KeyboardDispatcher.DispatchEvents();
+
+            uiRenderer.Update(gameTime);
+
+            ImGui.ShowDemoWindow();
+            //ImGui.Text("Hello World!");
 
             // Draw
             var commandBuffer = this.commandQueue.CommandBuffer();
@@ -153,8 +158,6 @@ namespace VisualTests.LowLevel.Tests
 
             commandBuffer.Draw((uint)this.vertexData.Length / 2);
             commandBuffer.EndRenderPass();
-
-            this.uiRenderer.Update(gameTime);
 
             uiRenderer.Render(commandBuffer, this.frameBuffer);
 

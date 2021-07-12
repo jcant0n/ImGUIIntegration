@@ -1,21 +1,21 @@
 ﻿using ImGuiNET;
 using System;
 using System.Collections.Generic;
-using System.Text;
 using WaveEngine.Common.Graphics;
-using WaveEngine.Platform;
-using VisualTests.Runners.Common;
 using Buffer = WaveEngine.Common.Graphics.Buffer;
 using System.Runtime.CompilerServices;
 using WaveEngine.Mathematics;
+using WaveEngine.Common.Input.Mouse;
+using WaveEngine.Common.Input;
+using WaveEngine.Common.Input.Keyboard;
 
 namespace VisualTests.LowLevel.Tests
 {
     public unsafe class ImGuiRenderer : IDisposable
     {
-        public GraphicsContext context;
-
-        private Buffer vertexBuffer;
+        private GraphicsContext context;
+        private Surface surface;
+        private Buffer[] vertexBuffers;
         private Buffer indexBuffer;
         private Buffer constantBuffer;
         private Texture fontTexture;
@@ -28,14 +28,15 @@ namespace VisualTests.LowLevel.Tests
         private ResourceSet fontResourceSet;
         private Rectangle[] scissors;
         private ImGuiIOPtr io;
-        private Buffer[] vertexBuffers;
+        private List<int> keyDownList;
 
         private int windowWidth;
         private int windowHeight;
         private System.Numerics.Vector2 scaleFactor = System.Numerics.Vector2.One;
 
         private IntPtr fontAtlasID = (IntPtr)1;
-        private int lastAssignedID = 10;
+        private int lastAssignedID = 100;
+        private bool frameBegun;
 
         private struct ResourceSetInfo
         {
@@ -52,9 +53,11 @@ namespace VisualTests.LowLevel.Tests
         private readonly Dictionary<Texture, ResourceSetInfo> resourceByTexture = new Dictionary<Texture, ResourceSetInfo>();
         private readonly Dictionary<IntPtr, ResourceSetInfo> resourceById = new Dictionary<IntPtr, ResourceSetInfo>();
 
-        public ImGuiRenderer(GraphicsContext context, FrameBuffer frameBuffer, ShaderDescription vertexShaderDescription, ShaderDescription pixelShaderDescription)
+        public ImGuiRenderer(GraphicsContext context, FrameBuffer frameBuffer, Surface surface, ShaderDescription vertexShaderDescription, ShaderDescription pixelShaderDescription)
         {
             this.context = context;
+            this.surface = surface;
+            this.keyDownList = new List<int>();
 
             IntPtr imGuiContext = ImGui.CreateContext();
             ImGui.SetCurrentContext(imGuiContext);
@@ -66,20 +69,19 @@ namespace VisualTests.LowLevel.Tests
             var pixelShader = context.Factory.CreateShader(ref pixelShaderDescription);
 
             var vertexBufferDescription = new BufferDescription(
-                10000, 
-                BufferFlags.VertexBuffer, 
-                ResourceUsage.Dynamic,
-                ResourceCpuAccess.Write);
+                10000,
+                BufferFlags.VertexBuffer,
+                ResourceUsage.Default,
+                ResourceCpuAccess.None);
 
-            this.vertexBuffer = context.Factory.CreateBuffer(ref vertexBufferDescription);
             this.vertexBuffers = new Buffer[1];
-            this.vertexBuffers[0] = this.vertexBuffer;
+            this.vertexBuffers[0] = context.Factory.CreateBuffer(ref vertexBufferDescription);
 
             var indexBufferDescription = new BufferDescription(
-                2000, 
-                BufferFlags.IndexBuffer, 
-                ResourceUsage.Dynamic,
-                ResourceCpuAccess.Write);
+                2000,
+                BufferFlags.IndexBuffer,
+                ResourceUsage.Default,
+                ResourceCpuAccess.None);
 
             this.indexBuffer = context.Factory.CreateBuffer(ref indexBufferDescription);
 
@@ -90,24 +92,31 @@ namespace VisualTests.LowLevel.Tests
                               .Add(new ElementDescription(ElementFormat.UByte4Normalized, ElementSemanticType.Color)));
 
             var layoutDescription = new ResourceLayoutDescription(
-                    new LayoutElementDescription(0, ResourceType.ConstantBuffer, ShaderStages.Vertex),
-                    new LayoutElementDescription(0, ResourceType.Sampler, ShaderStages.Pixel));
+                    new LayoutElementDescription(0, ResourceType.ConstantBuffer, ShaderStages.Vertex));
 
             this.layout = context.Factory.CreateResourceLayout(ref layoutDescription);
 
             var textureLayoutDescription = new ResourceLayoutDescription(
-                    new LayoutElementDescription(0, ResourceType.Texture, ShaderStages.Pixel));
+                    new LayoutElementDescription(0, ResourceType.Texture, ShaderStages.Pixel),
+                    new LayoutElementDescription(0, ResourceType.Sampler, ShaderStages.Pixel));
 
             this.textureLayout = context.Factory.CreateResourceLayout(ref textureLayoutDescription);
 
             var blendState = BlendStates.AlphaBlend;
+            blendState.AlphaToCoverageEnable = false;
+            blendState.RenderTarget0.BlendEnable = true;
             blendState.RenderTarget0.SourceBlendColor = Blend.SourceAlpha;
             blendState.RenderTarget0.DestinationBlendColor = Blend.InverseSourceAlpha;
             blendState.RenderTarget0.BlendOperationColor = BlendOperation.Add;
             blendState.RenderTarget0.SourceBlendAlpha = Blend.SourceAlpha;
-            blendState.RenderTarget0.DestinationBlendAlpha = Blend.InverseSourceAlpha;
+            blendState.RenderTarget0.DestinationBlendAlpha = Blend.Zero;
             blendState.RenderTarget0.BlendOperationAlpha = BlendOperation.Add;
-            blendState.IndependentBlendEnable = true;
+
+            var rasterizerState = RasterizerStates.None;
+            rasterizerState.FillMode = FillMode.Solid;
+            rasterizerState.CullMode = CullMode.None;
+            rasterizerState.ScissorEnable = true;
+            rasterizerState.DepthClipEnable = true;
 
             var pipelineDescription = new GraphicsPipelineDescription()
             {
@@ -121,7 +130,7 @@ namespace VisualTests.LowLevel.Tests
                 },
                 RenderStates = new RenderStateDescription()
                 {
-                    RasterizerState = RasterizerStates.None,
+                    RasterizerState = rasterizerState,
                     BlendState = blendState,
                     DepthStencilState = DepthStencilStates.None,
                 },
@@ -136,13 +145,105 @@ namespace VisualTests.LowLevel.Tests
             var constantBufferDescription = new BufferDescription((uint)Unsafe.SizeOf<Matrix4x4>(), BufferFlags.ConstantBuffer, ResourceUsage.Default);
             this.constantBuffer = context.Factory.CreateBuffer(ref constantBufferDescription);
 
-            SamplerStateDescription samplerDescription = SamplerStates.PointClamp;
-            var sampler = context.Factory.CreateSamplerState(ref samplerDescription);
-
-            var resourceSetDescription = new ResourceSetDescription(this.layout, this.constantBuffer, sampler);
+            var resourceSetDescription = new ResourceSetDescription(this.layout, this.constantBuffer);
             this.resourceSet = context.Factory.CreateResourceSet(ref resourceSetDescription);
 
             this.io = ImGui.GetIO();
+            RecreateFontTexture(context);
+
+            this.scissors = new Rectangle[1];
+
+            SetPerFrameImGuiData(1 / 60f);
+            ImGui.NewFrame();
+            frameBegun = true;
+
+            // Keyboard mapping. ImGui will use those indices to peek into the io.KeyDown[] array that we will update during the application lifetime.
+            io.KeyMap[(int)ImGuiKey.Tab] = (int)Keys.Tab; 
+            io.KeyMap[(int)ImGuiKey.LeftArrow] = (int)Keys.Left;
+            io.KeyMap[(int)ImGuiKey.RightArrow] = (int)Keys.Right;
+            io.KeyMap[(int)ImGuiKey.UpArrow] = (int)Keys.Up;
+            io.KeyMap[(int)ImGuiKey.DownArrow] = (int)Keys.Down;
+            io.KeyMap[(int)ImGuiKey.PageUp] = (int)Keys.PageUp;
+            io.KeyMap[(int)ImGuiKey.PageDown] = (int)Keys.PageDown;
+            io.KeyMap[(int)ImGuiKey.Home] = (int)Keys.Home;
+            io.KeyMap[(int)ImGuiKey.End] = (int)Keys.End;
+            io.KeyMap[(int)ImGuiKey.Delete] = (int)Keys.Delete;
+            io.KeyMap[(int)ImGuiKey.Backspace] = (int)Keys.Back;
+            io.KeyMap[(int)ImGuiKey.Enter] = (int)Keys.Enter;
+            io.KeyMap[(int)ImGuiKey.Escape] = (int)Keys.Escape;
+            io.KeyMap[(int)ImGuiKey.A] = (int)Keys.A;
+            io.KeyMap[(int)ImGuiKey.C] = (int)Keys.C;
+            io.KeyMap[(int)ImGuiKey.V] = (int)Keys.V;
+            io.KeyMap[(int)ImGuiKey.X] = (int)Keys.X;
+            io.KeyMap[(int)ImGuiKey.Y] = (int)Keys.Y;
+            io.KeyMap[(int)ImGuiKey.Z] = (int)Keys.Z;
+
+            // Register input events
+            var mouseDispatcher = this.surface.MouseDispatcher;
+            mouseDispatcher.MouseButtonDown += (s, e) =>
+            {
+                switch (e.Button)
+                {
+                    case MouseButtons.Left:
+                        io.MouseDown[0] = true;
+                        break;
+                    case MouseButtons.Right:
+                        io.MouseDown[1] = true;
+                        break;
+                    case MouseButtons.Middle:
+                        io.MouseDown[2] = true;
+                        break;
+                }
+            };
+
+            mouseDispatcher.MouseButtonUp += (s, e) =>
+            {
+                switch (e.Button)
+                {
+                    case MouseButtons.Left:
+                        io.MouseDown[0] = false;
+                        break;
+                    case MouseButtons.Right:
+                        io.MouseDown[1] = false;
+                        break;
+                    case MouseButtons.Middle:
+                        io.MouseDown[2] = false;
+                        break;
+                    default:
+                        break;
+                }
+            };
+
+            mouseDispatcher.MouseMove += (s, e) =>
+            {
+                io.MousePos.X = e.Position.X;
+                io.MousePos.Y = e.Position.Y;
+            };
+
+            mouseDispatcher.MouseScroll += (s, e) =>
+            {
+                io.MouseWheel = e.Delta.Y;
+            };
+
+            var keyboardDispatcher = this.surface.KeyboardDispatcher;
+            keyboardDispatcher.KeyDown += (s, e) =>
+            {
+                io.KeysDown[((int)e.Key)] = true;
+            };
+
+            keyboardDispatcher.KeyUp += (s, e) =>
+            {
+                io.KeysDown[(int)e.Key] = false;
+            };
+
+            keyboardDispatcher.KeyChar += (s, e) =>
+            {
+                io.AddInputCharacter(e.Character);
+            };
+        }
+
+        private void RecreateFontTexture(GraphicsContext context)
+        {
             this.io.Fonts.GetTexDataAsRGBA32(out byte* pixels, out int width, out int height, out int bytesPerPixel);
 
             this.io.Fonts.SetTexID(fontAtlasID);
@@ -166,33 +267,68 @@ namespace VisualTests.LowLevel.Tests
             this.fontTexture = context.Factory.CreateTexture(ref fontTextureDescription);
             context.UpdateTextureData(this.fontTexture, (IntPtr)pixels, (uint)(bytesPerPixel * width * height), 0);
 
-            var fontResourceSetDescription = new ResourceSetDescription(this.textureLayout, this.fontTexture);
+            SamplerStateDescription samplerDescription = new SamplerStateDescription()
+            {
+                Filter = TextureFilter.MinLinear_MagLinear_MipLinear,
+                AddressU = TextureAddressMode.Wrap,
+                AddressV = TextureAddressMode.Wrap,
+                AddressW = TextureAddressMode.Wrap,
+                MipLODBias = 0f,
+                ComparisonFunc = ComparisonFunction.Always,
+                MinLOD = 0f,
+                MaxLOD = 0f,
+            };
+
+            var sampler = context.Factory.CreateSamplerState(ref samplerDescription);
+
+            this.fontResourceSet?.Dispose();
+            var fontResourceSetDescription = new ResourceSetDescription(this.textureLayout, this.fontTexture, sampler);
             this.fontResourceSet = context.Factory.CreateResourceSet(ref fontResourceSetDescription);
 
             this.io.Fonts.ClearTexData();
-
-            this.scissors = new Rectangle[1];
         }
 
         public void Update(TimeSpan gameTime)
         {
+            if (frameBegun)
+            {
+                ImGui.Render();
+            }
+
+            SetPerFrameImGuiData((float)gameTime.TotalSeconds);
+
+            // Read keyboard modifiers input
+            var keyboardDispatcher = this.surface.KeyboardDispatcher;
+            io.KeyCtrl = keyboardDispatcher.IsKeyDown(Keys.LeftControl);
+            io.KeyShift = keyboardDispatcher.IsKeyDown(Keys.LeftShift);
+            io.KeyAlt = keyboardDispatcher.IsKeyDown(Keys.LeftAlt);
+
+            frameBegun = true;
+            ImGui.NewFrame();
+        }
+
+        private void SetPerFrameImGuiData(float deltaTime)
+        {
             this.io.DisplaySize = new System.Numerics.Vector2(
-                windowWidth / scaleFactor.X,
-                windowHeight / scaleFactor.Y);
+                            windowWidth / scaleFactor.X,
+                            windowHeight / scaleFactor.Y);
 
             this.io.DisplayFramebufferScale = scaleFactor;
-            this.io.DeltaTime = 1f / 60f;
-
-            ImGui.NewFrame();
-            ImGui.ShowDemoWindow();
+            this.io.DeltaTime = deltaTime;
         }
 
         public void Render(CommandBuffer cb, FrameBuffer frameBuffer)
         {
+            if (!frameBegun)
+            {
+                return;
+            }
+
+            frameBegun = false;
             ImGui.Render();
 
-            uint vertexOffset = 0;
-            uint indexOffset = 0;
+            uint vertexOffsetInVertices = 0;
+            uint indexOffsetInElements = 0;
 
             ImDrawDataPtr drawData = ImGui.GetDrawData();
 
@@ -203,18 +339,17 @@ namespace VisualTests.LowLevel.Tests
 
             // Resize index and vertex buffers.
             int vertexBufferSize = drawData.TotalVtxCount * sizeof(ImDrawVert);
-            if (vertexBufferSize > this.vertexBuffer.Description.SizeInBytes)
+            if (vertexBufferSize > this.vertexBuffers[0].Description.SizeInBytes)
             {
-                this.vertexBuffer.Dispose();
+                this.vertexBuffers[0].Dispose();
                 uint nextSize = (uint)MathHelper.NextPowerOfTwo(vertexBufferSize);
                 var vertexBufferDescription = new BufferDescription(
-                    nextSize, 
-                    BufferFlags.VertexBuffer, 
-                    ResourceUsage.Dynamic, 
-                    ResourceCpuAccess.Write);
+                    (uint)(nextSize),
+                    BufferFlags.VertexBuffer,
+                    ResourceUsage.Default,
+                    ResourceCpuAccess.None);
 
-                this.vertexBuffer = context.Factory.CreateBuffer(ref vertexBufferDescription);
-                this.vertexBuffers[0] = this.vertexBuffer;
+                this.vertexBuffers[0] = context.Factory.CreateBuffer(ref vertexBufferDescription);
             }
 
             int indexBufferSize = drawData.TotalIdxCount * sizeof(ushort);
@@ -223,10 +358,10 @@ namespace VisualTests.LowLevel.Tests
                 this.indexBuffer.Dispose();
                 uint nextSize = (uint)MathHelper.NextPowerOfTwo(indexBufferSize);
                 var indexBufferDescription = new BufferDescription(
-                    nextSize, 
-                    BufferFlags.IndexBuffer, 
-                    ResourceUsage.Dynamic, 
-                    ResourceCpuAccess.Write);
+                    (uint)(nextSize),
+                    BufferFlags.IndexBuffer,
+                    ResourceUsage.Default,
+                    ResourceCpuAccess.None);
 
                 this.indexBuffer = context.Factory.CreateBuffer(ref indexBufferDescription);
             }
@@ -237,19 +372,19 @@ namespace VisualTests.LowLevel.Tests
                 ImDrawListPtr cmdList = drawData.CmdListsRange[i];
 
                 cb.UpdateBufferData(
-                    this.vertexBuffer,
+                    this.vertexBuffers[0],
                     cmdList.VtxBuffer.Data,
                     (uint)(cmdList.VtxBuffer.Size * sizeof(ImDrawVert)),
-                    vertexOffset * (uint)sizeof(ImDrawVert));
+                    vertexOffsetInVertices * (uint)sizeof(ImDrawVert));
 
                 cb.UpdateBufferData(
                     this.indexBuffer,
                     cmdList.IdxBuffer.Data,
                     (uint)(cmdList.IdxBuffer.Size * sizeof(ushort)),
-                    indexOffset * sizeof(ushort));
+                    indexOffsetInElements * sizeof(ushort));
 
-                vertexOffset += (uint)cmdList.VtxBuffer.Size;
-                indexOffset += (uint)cmdList.IdxBuffer.Size;
+                vertexOffsetInVertices += (uint)cmdList.VtxBuffer.Size;
+                indexOffsetInElements += (uint)cmdList.IdxBuffer.Size;
             }
 
             // Set orthographics projection matrix
@@ -261,7 +396,6 @@ namespace VisualTests.LowLevel.Tests
                 -1.0f,
                 1.0f);
 
-            //mvp = Matrix4x4.Transpose(mvp);
             cb.UpdateBufferData(constantBuffer, ref mvp);
 
             RenderPassDescription renderPassDescription = new RenderPassDescription(frameBuffer, ClearValue.None);
@@ -276,23 +410,15 @@ namespace VisualTests.LowLevel.Tests
             drawData.ScaleClipRects(this.io.DisplayFramebufferScale);
 
             // Render command lists
-            vertexOffset = 0;
-            indexOffset = 0;
+            uint vtx_offset = 0;
+            uint idx_offset = 0;
 
-            for (int i = 0; i < drawData.CmdListsCount; i++)
+            for (int n = 0; n < drawData.CmdListsCount; n++)
             {
-                ImDrawListPtr cmdList = drawData.CmdListsRange[i];
-                for (int j = 0; j < cmdList.CmdBuffer.Size; j++)
+                ImDrawListPtr cmdList = drawData.CmdListsRange[n];
+                for (int i = 0; i < cmdList.CmdBuffer.Size; i++)
                 {
-                    ImDrawCmdPtr cmd = cmdList.CmdBuffer[j];
-                    
-                    this.scissors[0] = new Rectangle(
-                        (int)cmd.ClipRect.X,
-                        (int)cmd.ClipRect.Y,
-                        (int)(cmd.ClipRect.Z - cmd.ClipRect.X),
-                        (int)(cmd.ClipRect.W - cmd.ClipRect.Y));
-                    cb.SetScissorRectangles(this.scissors);
-
+                    ImDrawCmdPtr cmd = cmdList.CmdBuffer[i];
                     if (cmd.TextureId != IntPtr.Zero)
                     {
                         if (cmd.TextureId == fontAtlasID)
@@ -305,12 +431,23 @@ namespace VisualTests.LowLevel.Tests
                         }
                     }
 
-                    cb.DrawIndexed(cmd.ElemCount, indexOffset, vertexOffset);
+                    this.scissors = new Rectangle[1]
+                    {
+                        new Rectangle(
+                        (int)cmd.ClipRect.X,
+                        (int)cmd.ClipRect.Y,
+                        (int)(cmd.ClipRect.Z - cmd.ClipRect.X),
+                        (int)(cmd.ClipRect.W - cmd.ClipRect.Y))
+                    };
 
-                    indexOffset += cmd.ElemCount;
+                    cb.SetScissorRectangles(this.scissors);
+
+                    cb.DrawIndexedInstanced(cmd.ElemCount, 1, idx_offset, vtx_offset, 0);
+
+                    idx_offset += cmd.ElemCount;
                 }
 
-                vertexOffset += (uint)cmdList.VtxBuffer.Size;
+                vtx_offset += (uint)cmdList.VtxBuffer.Size;
             }
 
             cb.EndRenderPass();
@@ -329,7 +466,6 @@ namespace VisualTests.LowLevel.Tests
             }
 
             return info.ImGuiBinding;
-
         }
 
         public void RemoveImGuiBinding(Texture texture)
@@ -361,7 +497,8 @@ namespace VisualTests.LowLevel.Tests
         public void Dispose()
         {
             ImGui.DestroyContext();
-            vertexBuffer.Dispose();
+            this.vertexBuffers[0].Dispose();
+            this.vertexBuffers = null;
             indexBuffer.Dispose();
             constantBuffer.Dispose();
             //vertexShader.Dispose();
