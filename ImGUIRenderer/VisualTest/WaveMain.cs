@@ -46,6 +46,7 @@ namespace VisualTests.LowLevel.Tests
         protected override void OnResized(uint width, uint height)
         {
             this.viewports[0] = new Viewport(0, 0, width, height);
+            uiRenderer.WindowResized((int)width, (int)height);
         }
 
         protected override async void InternalLoad()
@@ -120,7 +121,7 @@ namespace VisualTests.LowLevel.Tests
 
 
             uiRenderer = new ImGuiRenderer(this.graphicsContext, this.frameBuffer, this.surface, imGuiVSDescription, imGuiPSDescription);
-
+            
             this.MarkAsLoaded();
         }
 

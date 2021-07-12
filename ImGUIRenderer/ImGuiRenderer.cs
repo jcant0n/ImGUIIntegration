@@ -232,6 +232,12 @@ namespace VisualTests.LowLevel.Tests
             };
         }
 
+        public void WindowResized(int width, int height)
+        {
+            this.windowWidth = width;
+            this.windowHeight = height;
+        }
+
         private void RecreateFontTexture(GraphicsContext context)
         {
             this.io.Fonts.GetTexDataAsRGBA32(out byte* pixels, out int width, out int height, out int bytesPerPixel);

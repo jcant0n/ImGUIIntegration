@@ -16,7 +16,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ImGui.NET" Version="1.72.0" />
+    <PackageReference Include="ImGui.NET" Version="1.78.0" />
     <PackageReference Include="WaveEngine.Common" Version="3.0.0.5947-preview4" />
     <PackageReference Include="WaveEngine.DirectX11" Version="3.0.0.5947-preview4" />
     <PackageReference Include="WaveEngine.DirectX12" Version="3.0.0.5947-preview4" />
