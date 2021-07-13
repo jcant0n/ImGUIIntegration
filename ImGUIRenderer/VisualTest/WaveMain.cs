@@ -2,12 +2,9 @@
 
 using ImGuiNET;
 using System;
-using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using System.Threading.Tasks;
 using VisualTests.Runners.Common;
 using WaveEngine.Common.Graphics;
-using WaveEngine.Common.Input.Mouse;
 using WaveEngine.Mathematics;
 using Buffer = WaveEngine.Common.Graphics.Buffer;
 
@@ -138,7 +135,7 @@ namespace VisualTests.LowLevel.Tests
             uiRenderer.Update(gameTime);
 
             ImGui.ShowDemoWindow();
-            //ImGui.Text("Hello World!");
+            ImGui.Text("Hello ImGui from WaveEngine!");
 
             // Draw
             var commandBuffer = this.commandQueue.CommandBuffer();
