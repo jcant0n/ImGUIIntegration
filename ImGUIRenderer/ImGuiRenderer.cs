@@ -58,7 +58,8 @@ namespace VisualTests.LowLevel.Tests
             IntPtr imGuiContext = ImGui.CreateContext();
             ImGui.SetCurrentContext(imGuiContext);
 
-            ImGui.GetIO().Fonts.AddFontDefault();
+            this.io = ImGui.GetIO();
+            this.io.Fonts.AddFontDefault();
 
             // Create native resources
             var vertexShader = context.Factory.CreateShader(ref vertexShaderDescription);
@@ -144,7 +145,6 @@ namespace VisualTests.LowLevel.Tests
             var resourceSetDescription = new ResourceSetDescription(this.layout, this.constantBuffer);
             this.resourceSet = context.Factory.CreateResourceSet(ref resourceSetDescription);
 
-            this.io = ImGui.GetIO();
             RecreateFontTexture(context);
 
             // Keyboard mapping. ImGui will use those indices to peek into the io.KeyDown[] array that we will update during the application lifetime.
